@@ -220,10 +220,13 @@ func (q *queue) delete() {
 			}
 			p = p.next
 		}
+<<<<<<< HEAD
 		if i > earlyStopping && q.head.val <= cost {
 			log.Printf("early stopped after %d iterations, with best score: %.3f", i, q.best.val)
 			return q.best.w, q.best.b
 		}
+=======
+>>>>>>> 6d9d2d8 (генерализировал регуляризацию, пофиксил права загрузки в файл)
 	}
 	q.head = q.head.next
 	q.len--
@@ -520,6 +523,7 @@ func main() {
 	Xtrain, Xtest, ytrain, ytest := SplitSample(X, y, 0.8)
 	lr := LogisticRegressor(0.4)
 	lr.Fit(Xtrain, ytrain, 1, 42, 200000, 100, 100)
+<<<<<<< HEAD
 	yhatT := lr.Predict(Xtest...)
 	tp, tn, fp, fn := ComputePredictMetrics(yhatT, ytest)
 	prec, rec := tp / (tp + fp), tp / (tp + fn)
@@ -527,6 +531,8 @@ func main() {
 	fmt.Printf("Recall: %.4f\n", rec)
 	fmt.Printf("Accuracy: %.4f\n", (tp + tn) / (tp + tn + fp + fn))
 	fmt.Printf("F1-score: %.4f\n", 2 * prec * rec / (prec + rec))
+=======
+>>>>>>> 6d9d2d8 (генерализировал регуляризацию, пофиксил права загрузки в файл)
 	fmt.Println(lr)
 	fmt.Printf("log loss: %.4f\n", BinaryCrossEntropy(Xtest, ytest, lr.w, lr.b, 0))
 	fmt.Printf("reg log loss: %.4f\n", BinaryCrossEntropy(Xtest, ytest, lr.w, lr.b, 1))
