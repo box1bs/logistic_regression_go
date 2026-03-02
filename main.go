@@ -220,6 +220,10 @@ func (q *queue) delete() {
 			}
 			p = p.next
 		}
+		if i > earlyStopping && q.head.val <= cost {
+			log.Printf("early stopped after %d iterations, with best score: %.3f", i, q.best.val)
+			return q.best.w, q.best.b
+		}
 	}
 	q.head = q.head.next
 	q.len--
