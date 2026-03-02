@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -175,8 +176,10 @@ func computeGradientReg(X []vec64, y vec64, w vec64, b, lambda float64) (vec64, 
 	samplesNum, featuresNum := len(y), len(X[0])
 	dj_dw, dj_db := computeGradient(X, y, w, b)
 
-	for j := range featuresNum {
-		dj_dw[j] += lambda / float64(samplesNum) * w[j]
+	if lambda != 0 {
+		for j := range featuresNum {
+			dj_dw[j] += lambda / float64(samplesNum) * w[j]
+		}
 	}
 
 	return dj_dw, dj_db
@@ -222,32 +225,7 @@ func (q *queue) delete() {
 	q.len--
 }
 
-func gradientDescent(X []vec64, y, wInit vec64, bInit, learningRate float64, numIters, checkEach, earlyStopping int) (vec64, float64) {
-	w := make(vec64, len(wInit))
-	copy(w, wInit)
-	b := bInit
-	q := queue{cap: earlyStopping}
-	for i := range numIters {
-		dj_dw, dj_db := computeGradient(X, y, w, b)
-
-		w = Subtract(w, dj_dw.Dot(learningRate))
-		b -= learningRate * dj_db
-
-		cost := BinaryCrossEntropy(X, y, w, b)
-		q.insert(w, b, cost)
-		if (i+1)%checkEach == 0 {
-			log.Printf("Iteration: %d, cost: %.4f\n", i+1, cost)
-		}
-		if i > earlyStopping && q.head.val <= cost {
-			log.Printf("early stopped after %d iterations, with best score: %.3f", i, q.best.val)
-			return q.best.w, q.best.b
-		}
-	}
-
-	return w, b
-}
-
-func gradientDescentReg(X []vec64, y, wInit vec64, bInit, learningRate, lambda float64, numIters, checkEach, earlyStopping int) (vec64, float64) {
+func gradientDescent(X []vec64, y, wInit vec64, bInit, learningRate, lambda float64, numIters, checkEach, earlyStopping int) (vec64, float64) {
 	w := make(vec64, len(wInit))
 	copy(w, wInit)
 	b := bInit
@@ -258,7 +236,7 @@ func gradientDescentReg(X []vec64, y, wInit vec64, bInit, learningRate, lambda f
 		w = Subtract(w, dj_dw.Dot(learningRate))
 		b -= learningRate * dj_db
 
-		cost := BinaryCrossEntropyReg(X, y, w, b, lambda)
+		cost := BinaryCrossEntropy(X, y, w, b, lambda)
 		q.insert(w, b, cost)
 		if (i+1)%checkEach == 0 {
 			log.Printf("Iteration: %d, cost: %.4f\n", i+1, cost)
@@ -272,18 +250,7 @@ func gradientDescentReg(X []vec64, y, wInit vec64, bInit, learningRate, lambda f
 	return w, b
 }
 
-func BinaryCrossEntropy(X []vec64, y, w vec64, b float64) float64 {
-	cost := 0.0
-	m := float64(len(y))
-	epsilon := 1e-15
-	for i := range y {
-		yhati := sigmoid(Dot(X[i], w) + b)
-		cost += -y[i]*math.Log(yhati + epsilon) - (1-y[i])*math.Log(1-yhati+epsilon)
-	}
-	return cost / m
-}
-
-func BinaryCrossEntropyReg(X []vec64, y, w vec64, b, lambda float64) float64 {
+func BinaryCrossEntropy(X []vec64, y, w vec64, b, lambda float64) float64 {
 	cost := 0.0
 	samples := len(y)
 	epsilon := 1e-15
@@ -291,7 +258,9 @@ func BinaryCrossEntropyReg(X []vec64, y, w vec64, b, lambda float64) float64 {
 		yhati := sigmoid(Dot(X[i], w) + b)
 		cost += -y[i]*math.Log(yhati + epsilon) - (1-y[i])*math.Log(1-yhati+epsilon)
 	}
-	cost += lambda/(float64(samples)*2)*w.Pow(2.0).Sum()
+	if lambda != 0 {
+		cost += lambda/(float64(samples)*2)*w.Pow(2.0).Sum()
+	}
 	return cost / float64(samples)
 }
 
@@ -378,7 +347,7 @@ func (rs *robustScaler) Scale1D(vec vec64) {
 }
 
 func (rs *robustScaler) LoadToFile(path string) error {
-	file, err := os.OpenFile(path, os.O_CREATE, 0600)
+	file, err := os.OpenFile(path, os.O_CREATE | os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
@@ -444,7 +413,7 @@ func LogisticRegressor(threshold float64) *model {
 }
 
 func (m *model) LoadToFile(path string) error {
-	file, err := os.OpenFile(path, os.O_CREATE, 0600)
+	file, err := os.OpenFile(path, os.O_CREATE | os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
@@ -476,7 +445,8 @@ func (m *model) LoadFromFile(path string) error {
 	return nil
 }
 
-func (m *model) Fit(X []vec64, y vec64, randomState, epochs, printAfterEach, earlyStopping int, reg bool) {
+// lambda_ = 0 for disable reg
+func (m *model) Fit(X []vec64, y vec64, lambda_ float64, randomState, epochs, printAfterEach, earlyStopping int) {
 	featuren := len(X[0])
 	wInit := make(vec64, featuren)
 	rd := rand.New(rand.NewSource(int64(randomState)))
@@ -484,14 +454,9 @@ func (m *model) Fit(X []vec64, y vec64, randomState, epochs, printAfterEach, ear
 		wInit[i] = rd.Float64()
 	}
 	bInit := rd.Float64()
-	lambda := 1.0
-	lrate := 0.01
+	lrate := 0.05
 
-	if reg {
-		m.w, m.b = gradientDescentReg(X, y, wInit, bInit, lrate, lambda, epochs, printAfterEach, earlyStopping)
-	} else {
-		m.w, m.b = gradientDescent(X, y, wInit, bInit, lrate, epochs, printAfterEach, earlyStopping)
-	}
+	m.w, m.b = gradientDescent(X, y, wInit, bInit, lrate, lambda_, epochs, printAfterEach, earlyStopping)
 }
 
 func (m *model) Predict(x vec64) float64 {
@@ -526,8 +491,12 @@ func main() {
 	scaler.Scale2D(X)
 	Xtrain, Xtest, ytrain, ytest := SplitSample(X, y, 0.8)
 	lr := LogisticRegressor(0.4)
-	lr.Fit(Xtrain, ytrain, 42, 200000, 100, 10, true)
+	lr.Fit(Xtrain, ytrain, 1, 42, 200000, 100, 100)
 	fmt.Println(lr)
-	fmt.Printf("log loss: %.4f\n", BinaryCrossEntropy(Xtest, ytest, lr.w, lr.b))
-	fmt.Printf("reg log loss: %.4f\n", BinaryCrossEntropyReg(Xtest, ytest, lr.w, lr.b, 1))
+	fmt.Printf("log loss: %.4f\n", BinaryCrossEntropy(Xtest, ytest, lr.w, lr.b, 0))
+	fmt.Printf("reg log loss: %.4f\n", BinaryCrossEntropy(Xtest, ytest, lr.w, lr.b, 1))
+	if err := lr.LoadToFile("lr1"); err != nil {panic(err)}
+	tmp_w, tmp_b := lr.w, lr.b
+	if err := lr.LoadFromFile("lr1"); err != nil {panic(err)}
+	if !reflect.DeepEqual(tmp_w, lr.w) || !reflect.DeepEqual(tmp_b, lr.b) {panic("unexpected behavior")}
 }
