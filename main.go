@@ -182,10 +182,51 @@ func computeGradientReg(X []vec64, y vec64, w vec64, b, lambda float64) (vec64, 
 	return dj_dw, dj_db
 }
 
-func gradientDescent(X []vec64, y, wInit vec64, bInit, learningRate float64, numIters, checkEach int) (vec64, float64) {
+type queue struct {
+	head, best, end *node
+	len, cap int
+}
+
+type node struct {
+	next *node
+	w vec64
+	b float64
+	val  float64
+}
+
+func (q *queue) insert(w vec64, b, val float64) {
+	if q.len == 0 {q.head=&node{w: w, b: b, val: val};q.best=q.head; q.end=q.head; return}
+	if q.len == q.cap {
+		q.delete()
+	}
+	q.end.next = &node{w: w, b: b, val: val}
+	q.end = q.end.next
+	if q.best.val > q.end.val {
+		q.best = q.end
+	}
+	q.len++
+}
+
+func (q *queue) delete() {
+	if q.best == q.head {
+		p := q.head.next
+		q.best = p
+		for p != nil {
+			if p.val < q.best.val {
+				q.best = p
+			}
+			p = p.next
+		}
+	}
+	q.head = q.head.next
+	q.len--
+}
+
+func gradientDescent(X []vec64, y, wInit vec64, bInit, learningRate float64, numIters, checkEach, earlyStopping int) (vec64, float64) {
 	w := make(vec64, len(wInit))
 	copy(w, wInit)
 	b := bInit
+	q := queue{cap: earlyStopping}
 	for i := range numIters {
 		dj_dw, dj_db := computeGradient(X, y, w, b)
 
@@ -193,18 +234,24 @@ func gradientDescent(X []vec64, y, wInit vec64, bInit, learningRate float64, num
 		b -= learningRate * dj_db
 
 		cost := BinaryCrossEntropy(X, y, w, b)
+		q.insert(w, b, cost)
 		if (i+1)%checkEach == 0 {
 			log.Printf("Iteration: %d, cost: %.4f\n", i+1, cost)
+		}
+		if i > earlyStopping && q.head.val <= cost {
+			log.Printf("early stopped after %d iterations, with best score: %.3f", i, q.best.val)
+			return q.best.w, q.best.b
 		}
 	}
 
 	return w, b
 }
 
-func gradientDescentReg(X []vec64, y, wInit vec64, bInit, learningRate, lambda float64, numIters, checkEach int) (vec64, float64) {
+func gradientDescentReg(X []vec64, y, wInit vec64, bInit, learningRate, lambda float64, numIters, checkEach, earlyStopping int) (vec64, float64) {
 	w := make(vec64, len(wInit))
 	copy(w, wInit)
 	b := bInit
+	q := queue{cap: earlyStopping}
 	for i := range numIters {
 		dj_dw, dj_db := computeGradientReg(X, y, w, b, lambda)
 
@@ -212,8 +259,13 @@ func gradientDescentReg(X []vec64, y, wInit vec64, bInit, learningRate, lambda f
 		b -= learningRate * dj_db
 
 		cost := BinaryCrossEntropyReg(X, y, w, b, lambda)
+		q.insert(w, b, cost)
 		if (i+1)%checkEach == 0 {
 			log.Printf("Iteration: %d, cost: %.4f\n", i+1, cost)
+		}
+		if i > earlyStopping && q.head.val <= cost {
+			log.Printf("early stopped after %d iterations, with best score: %.3f", i, q.best.val)
+			return q.best.w, q.best.b
 		}
 	}
 
@@ -272,6 +324,10 @@ type robustScaler struct {
 	Q2, irq vec64
 }
 
+func RobustScaler() *robustScaler {
+	return &robustScaler{}
+}
+
 func median(X_sorted vec64, n int) float64 {
 	mid := n / 2
 	if n % 2 == 0 {
@@ -319,6 +375,48 @@ func (rs *robustScaler) Scale1D(vec vec64) {
 	for i := range featuresNum {
 		vec[i] = (vec[i] - rs.Q2[i]) / rs.irq[i]
 	}
+}
+
+func (rs *robustScaler) LoadToFile(path string) error {
+	file, err := os.OpenFile(path, os.O_CREATE, 0600)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	sb := strings.Builder{}
+	l := len(rs.irq)
+	for i := range l {
+		sb.WriteString(strconv.FormatFloat(rs.Q2[i], 'f', 16, 64))
+		sb.WriteByte(':')
+		sb.WriteString(strconv.FormatFloat(rs.irq[i], 'f', 16, 64))
+		if i + 1 < l {
+			sb.WriteByte(',')
+		}
+	}
+	_, err = file.WriteString(sb.String())
+	return err
+}
+
+func (rs *robustScaler) LoadFromFile(path string) (*robustScaler, error) {
+	file, err := os.OpenFile(path, os.O_RDONLY, 0600)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	medians, irqs := []string{}, []string{}
+	body, err := io.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+	sets := strings.SplitSeq(string(body), ",")
+	for set := range sets {
+		pair := strings.Split(set, ":")
+		medians = append(medians, pair[0])
+		irqs = append(irqs, pair[1])
+	}
+	rs.Q2 = Vec(medians...)
+	rs.irq = Vec(irqs...)
+	return rs, nil
 }
 
 func Transpose(v []vec64) []vec64 {
@@ -378,7 +476,7 @@ func (m *model) LoadFromFile(path string) error {
 	return nil
 }
 
-func (m *model) Fit(X []vec64, y vec64, randomState, epochs, printAfterEach int, reg bool) {
+func (m *model) Fit(X []vec64, y vec64, randomState, epochs, printAfterEach, earlyStopping int, reg bool) {
 	featuren := len(X[0])
 	wInit := make(vec64, featuren)
 	rd := rand.New(rand.NewSource(int64(randomState)))
@@ -390,9 +488,9 @@ func (m *model) Fit(X []vec64, y vec64, randomState, epochs, printAfterEach int,
 	lrate := 0.01
 
 	if reg {
-		m.w, m.b = gradientDescentReg(X, y, wInit, bInit, lrate, lambda, epochs, printAfterEach)
+		m.w, m.b = gradientDescentReg(X, y, wInit, bInit, lrate, lambda, epochs, printAfterEach, earlyStopping)
 	} else {
-		m.w, m.b = gradientDescent(X, y, wInit, bInit, lrate, epochs, printAfterEach)
+		m.w, m.b = gradientDescent(X, y, wInit, bInit, lrate, epochs, printAfterEach, earlyStopping)
 	}
 }
 
@@ -428,7 +526,7 @@ func main() {
 	scaler.Scale2D(X)
 	Xtrain, Xtest, ytrain, ytest := SplitSample(X, y, 0.8)
 	lr := LogisticRegressor(0.4)
-	lr.Fit(Xtrain, ytrain, 42, 12000, 100, true)
+	lr.Fit(Xtrain, ytrain, 42, 200000, 100, 10, true)
 	fmt.Println(lr)
 	fmt.Printf("log loss: %.4f\n", BinaryCrossEntropy(Xtest, ytest, lr.w, lr.b))
 	fmt.Printf("reg log loss: %.4f\n", BinaryCrossEntropyReg(Xtest, ytest, lr.w, lr.b, 1))
