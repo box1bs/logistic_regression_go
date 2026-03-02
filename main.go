@@ -9,7 +9,6 @@ import (
 	"math/rand"
 	"os"
 	"reflect"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -226,32 +225,7 @@ func (q *queue) delete() {
 	q.len--
 }
 
-func gradientDescent(X []vec64, y, wInit vec64, bInit, learningRate float64, numIters, checkEach, earlyStopping int) (vec64, float64) {
-	w := make(vec64, len(wInit))
-	copy(w, wInit)
-	b := bInit
-	q := queue{cap: earlyStopping}
-	for i := range numIters {
-		dj_dw, dj_db := computeGradient(X, y, w, b)
-
-		w = Subtract(w, dj_dw.Dot(learningRate))
-		b -= learningRate * dj_db
-
-		cost := BinaryCrossEntropy(X, y, w, b)
-		q.insert(w, b, cost)
-		if (i+1)%checkEach == 0 {
-			log.Printf("Iteration: %d, cost: %.4f\n", i+1, cost)
-		}
-		if i > earlyStopping && q.head.val <= cost {
-			log.Printf("early stopped after %d iterations, with best score: %.3f", i, q.best.val)
-			return q.best.w, q.best.b
-		}
-	}
-
-	return w, b
-}
-
-func gradientDescentReg(X []vec64, y, wInit vec64, bInit, learningRate, lambda float64, numIters, checkEach, earlyStopping int) (vec64, float64) {
+func gradientDescent(X []vec64, y, wInit vec64, bInit, learningRate, lambda float64, numIters, checkEach, earlyStopping int) (vec64, float64) {
 	w := make(vec64, len(wInit))
 	copy(w, wInit)
 	b := bInit
@@ -542,7 +516,6 @@ func main() {
 	Xtrain, Xtest, ytrain, ytest := SplitSample(X, y, 0.8)
 	lr := LogisticRegressor(0.4)
 	lr.Fit(Xtrain, ytrain, 1, 42, 200000, 100, 100)
-<<<<<<< HEAD
 	yhatT := lr.Predict(Xtest...)
 	tp, tn, fp, fn := ComputePredictMetrics(yhatT, ytest)
 	prec, rec := tp / (tp + fp), tp / (tp + fn)
@@ -550,8 +523,6 @@ func main() {
 	fmt.Printf("Recall: %.4f\n", rec)
 	fmt.Printf("Accuracy: %.4f\n", (tp + tn) / (tp + tn + fp + fn))
 	fmt.Printf("F1-score: %.4f\n", 2 * prec * rec / (prec + rec))
-=======
->>>>>>> 6d9d2d8 (генерализировал регуляризацию, пофиксил права загрузки в файл)
 	fmt.Println(lr)
 	fmt.Printf("log loss: %.4f\n", BinaryCrossEntropy(Xtest, ytest, lr.w, lr.b, 0))
 	fmt.Printf("reg log loss: %.4f\n", BinaryCrossEntropy(Xtest, ytest, lr.w, lr.b, 1))
