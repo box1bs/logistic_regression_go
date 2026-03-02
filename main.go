@@ -241,7 +241,7 @@ func gradientDescent(X []vec64, y, wInit vec64, bInit, learningRate, lambda floa
 		if (i+1)%checkEach == 0 {
 			log.Printf("Iteration: %d, cost: %.4f\n", i+1, cost)
 		}
-		if i > earlyStopping && q.head.val <= cost {
+		if i > earlyStopping && q.head.val < cost {
 			log.Printf("early stopped after %d iterations, with best score: %.3f", i, q.best.val)
 			return q.best.w, q.best.b
 		}
@@ -459,9 +459,33 @@ func (m *model) Fit(X []vec64, y vec64, lambda_ float64, randomState, epochs, pr
 	m.w, m.b = gradientDescent(X, y, wInit, bInit, lrate, lambda_, epochs, printAfterEach, earlyStopping)
 }
 
-func (m *model) Predict(x vec64) float64 {
-	if sigmoid(Dot(x, m.w) + m.b) > m.threshold {return 1}
-	return 0
+func (m *model) Predict(X ...vec64) vec64 {
+	rows := len(X)
+	p := make(vec64, rows)
+	for i := range rows {
+		if sigmoid(Dot(X[i], m.w) + m.b) > m.threshold {p[i] = 1; continue}
+		p[i] = 0
+	}
+	return p
+}
+
+func ComputePredictMetrics(yhat, y vec64) (tp, tn, fp, fn float64) {
+	for i := range y {
+		if y[i] == 1 {
+			if y[i] == yhat[i] {
+				tp++
+			} else {
+				fn++
+			}
+		} else {
+			if y[i] == yhat[i] {
+				tn++
+			} else {
+				fp++
+			}
+		}
+	}
+	return
 }
 
 func SplitSample(X []vec64, y vec64, scale float64) ([]vec64, []vec64, vec64, vec64) {
@@ -492,6 +516,13 @@ func main() {
 	Xtrain, Xtest, ytrain, ytest := SplitSample(X, y, 0.8)
 	lr := LogisticRegressor(0.4)
 	lr.Fit(Xtrain, ytrain, 1, 42, 200000, 100, 100)
+	yhatT := lr.Predict(Xtest...)
+	tp, tn, fp, fn := ComputePredictMetrics(yhatT, ytest)
+	prec, rec := tp / (tp + fp), tp / (tp + fn)
+	fmt.Printf("Precision: %.4f\n", prec)
+	fmt.Printf("Recall: %.4f\n", rec)
+	fmt.Printf("Accuracy: %.4f\n", (tp + tn) / (tp + tn + fp + fn))
+	fmt.Printf("F1-score: %.4f\n", 2 * prec * rec / (prec + rec))
 	fmt.Println(lr)
 	fmt.Printf("log loss: %.4f\n", BinaryCrossEntropy(Xtest, ytest, lr.w, lr.b, 0))
 	fmt.Printf("reg log loss: %.4f\n", BinaryCrossEntropy(Xtest, ytest, lr.w, lr.b, 1))
