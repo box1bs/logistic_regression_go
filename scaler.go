@@ -12,6 +12,14 @@ type robustScaler struct {
 	Q2, irq vec64
 }
 
+type Scaler interface {
+	Fit(X []vec64)
+	Scale2D(matrix []vec64)
+	Scale1D(vec vec64)
+	LoadToFile(path string) error
+	LoadFromFile(path string) (*robustScaler, error)
+}
+
 func RobustScaler() *robustScaler {
 	return &robustScaler{}
 }
