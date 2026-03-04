@@ -17,7 +17,7 @@ type Scaler interface {
 	Scale2D(matrix []vec64)
 	Scale1D(vec vec64)
 	LoadToFile(path string) error
-	LoadFromFile(path string) (*robustScaler, error)
+	LoadFromFile(path string) error
 }
 
 func RobustScaler() *robustScaler {
@@ -99,16 +99,16 @@ func (rs *robustScaler) LoadToFile(path string) error {
 	return err
 }
 
-func (rs *robustScaler) LoadFromFile(path string) (*robustScaler, error) {
+func (rs *robustScaler) LoadFromFile(path string) error {
 	file, err := os.OpenFile(path, os.O_RDONLY, 0600)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer file.Close()
 	medians, irqs := []string{}, []string{}
 	body, err := io.ReadAll(file)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	sets := strings.SplitSeq(string(body), ",")
 	for set := range sets {
@@ -118,7 +118,7 @@ func (rs *robustScaler) LoadFromFile(path string) (*robustScaler, error) {
 	}
 	rs.Q2 = Vec(medians...)
 	rs.irq = Vec(irqs...)
-	return rs, nil
+	return nil
 }
 
 func Transpose(v []vec64) []vec64 {
